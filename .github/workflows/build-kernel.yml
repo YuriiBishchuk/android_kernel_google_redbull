@@ -1,0 +1,73 @@
+name: Build Pocket PC Kernel
+
+on:
+  push:
+    branches: [ lineage-20, main ]
+    tags: [ 'v*' ]
+  pull_request:
+    branches: [ lineage-20, main ]
+  workflow_dispatch:
+
+jobs:
+  build-kernel:
+    name: Build Linux 4.19 Redbull Pocket PC
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout kernel source
+        uses: actions/checkout@v4
+
+      - name: Install Build Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            bc bison build-essential ca-certificates ccache curl flex \
+            git libssl-dev libelf-dev lz4 python3 \
+            clang-14 lld-14 llvm-14 gcc-aarch64-linux-gnu
+
+      - name: Set SCM Version
+        run: echo "-gdb4810fe97f0" > .scmversion
+
+      - name: Configure Kernel (bramble_pocketpc_defconfig)
+        run: |
+          mkdir -p out
+          make O=out ARCH=arm64 SUBARCH=arm64 \
+            CC=clang-14 LD=ld.lld-14 AR=llvm-ar-14 NM=llvm-nm-14 \
+            OBJCOPY=llvm-objcopy-14 OBJDUMP=llvm-objdump-14 STRIP=llvm-strip-14 \
+            CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- \
+            bramble_pocketpc_defconfig
+
+      - name: Compile Kernel Image & Modules
+        run: |
+          make -j$(nproc) O=out ARCH=arm64 SUBARCH=arm64 \
+            CC=clang-14 LD=ld.lld-14 AR=llvm-ar-14 NM=llvm-nm-14 \
+            OBJCOPY=llvm-objcopy-14 OBJDUMP=llvm-objdump-14 STRIP=llvm-strip-14 \
+            CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- \
+            Image.lz4 modules
+
+      - name: Stage & Strip Modules
+        run: |
+          mkdir -p staging out/artifacts
+          make O=out ARCH=arm64 \
+            INSTALL_MOD_PATH=staging modules_install
+          
+          # Strip debug symbols
+          find staging/lib/modules -name "*.ko" -exec llvm-strip-14 --strip-debug {} +
+          
+          # Package Image and modules
+          cp out/arch/arm64/boot/Image.lz4 out/artifacts/
+          tar -czf out/artifacts/modules-4.19.269-pocketpc.tar.gz -C staging/lib/modules .
+          ls -lh out/artifacts/
+
+      - name: Upload Kernel Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: kernel-pocketpc-artifacts
+          path: out/artifacts/*
+          if-no-files-found: error
+
+      - name: Publish GitHub Release on Tag
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: out/artifacts/*
+          generate_release_notes: true
