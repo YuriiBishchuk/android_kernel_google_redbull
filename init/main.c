@@ -88,6 +88,7 @@
 #include <linux/integrity.h>
 #include <linux/proc_ns.h>
 #include <linux/io.h>
+#include <linux/reboot.h>
 #include <linux/cache.h>
 #include <linux/rodata_test.h>
 #include <linux/jump_label.h>
@@ -374,6 +375,14 @@ static inline void smp_prepare_cpus(unsigned int maxcpus) { }
  */
 static void __init setup_command_line(char *command_line)
 {
+	char *p;
+	p = strstr(boot_command_line, "console=null");
+	if (p)
+		memcpy(p, "console=tty0", 12);
+	p = strstr(command_line, "console=null");
+	if (p)
+		memcpy(p, "console=tty0", 12);
+
 	saved_command_line =
 		memblock_virt_alloc(strlen(boot_command_line) + 1, 0);
 	initcall_command_line =
@@ -1132,6 +1141,9 @@ static int __ref kernel_init(void *unused)
 		ret = run_init_process(execute_command);
 		if (!ret)
 			return 0;
+		pr_emerg("CRITICAL: Requested init %s failed (error %d). Hardware rebooting into Recovery...\n",
+		      execute_command, ret);
+		kernel_restart("recovery");
 		panic("Requested init %s failed (error %d).",
 		      execute_command, ret);
 	}
@@ -1141,6 +1153,8 @@ static int __ref kernel_init(void *unused)
 	    !try_to_run_init_process("/bin/sh"))
 		return 0;
 
+	pr_emerg("CRITICAL: No working init found! Hardware failsafe rebooting into Recovery...\n");
+	kernel_restart("recovery");
 	panic("No working init found.  Try passing init= option to kernel. "
 	      "See Linux Documentation/admin-guide/init.rst for guidance.");
 }
