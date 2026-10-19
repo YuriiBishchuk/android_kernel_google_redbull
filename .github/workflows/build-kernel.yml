@@ -2,10 +2,10 @@ name: Build Pocket PC Kernel
 
 on:
   push:
-    branches: [ lineage-20, main ]
+    branches: [ lineage-20, lineage-20-pocketpc, main ]
     tags: [ 'v*' ]
   pull_request:
-    branches: [ lineage-20, main ]
+    branches: [ lineage-20, lineage-20-pocketpc, main ]
   workflow_dispatch:
 
 jobs:
