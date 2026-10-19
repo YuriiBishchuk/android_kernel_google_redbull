@@ -1,4 +1,4 @@
-name: Build Pocket PC Kernel
+name: Build Linux Kernels
 
 on:
   push:
@@ -10,8 +10,19 @@ on:
 
 jobs:
   build-kernel:
-    name: Build Linux 4.19 Redbull Pocket PC
+    name: Build Kernel (${{ matrix.flavor }})
     runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        flavor: [ standard, pocketpc ]
+        include:
+          - flavor: standard
+            defconfig: bramble_defconfig
+            artifact_name: kernel-standard-artifacts
+          - flavor: pocketpc
+            defconfig: bramble_pocketpc_defconfig
+            artifact_name: kernel-pocketpc-artifacts
     steps:
       - name: Checkout kernel source
         uses: actions/checkout@v4
@@ -27,14 +38,14 @@ jobs:
       - name: Set SCM Version
         run: echo "-gdb4810fe97f0" > .scmversion
 
-      - name: Configure Kernel (bramble_pocketpc_defconfig)
+      - name: Configure Kernel (${{ matrix.defconfig }})
         run: |
           mkdir -p out
           make O=out ARCH=arm64 SUBARCH=arm64 \
             CC=clang-14 LD=ld.lld-14 AR=llvm-ar-14 NM=llvm-nm-14 \
             OBJCOPY=llvm-objcopy-14 OBJDUMP=llvm-objdump-14 STRIP=llvm-strip-14 \
             CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- \
-            bramble_pocketpc_defconfig
+            ${{ matrix.defconfig }}
 
       - name: Compile Kernel Image & Modules
         run: |
@@ -50,18 +61,16 @@ jobs:
           make O=out ARCH=arm64 \
             INSTALL_MOD_PATH=staging modules_install
           
-          # Strip debug symbols
-          find staging/lib/modules -name "*.ko" -exec llvm-strip-14 --strip-debug {} +
+          find staging/lib/modules -name "*.ko" -exec llvm-strip-14 --strip-debug {} + 2>/dev/null || true
           
-          # Package Image and modules
-          cp out/arch/arm64/boot/Image.lz4 out/artifacts/
-          tar -czf out/artifacts/modules-4.19.269-pocketpc.tar.gz -C staging/lib/modules .
+          cp out/arch/arm64/boot/Image.lz4 out/artifacts/Image-${{ matrix.flavor }}.lz4
+          tar -czf out/artifacts/modules-4.19.269-${{ matrix.flavor }}.tar.gz -C staging/lib/modules .
           ls -lh out/artifacts/
 
       - name: Upload Kernel Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: kernel-pocketpc-artifacts
+          name: ${{ matrix.artifact_name }}
           path: out/artifacts/*
           if-no-files-found: error
 
